@@ -52,8 +52,9 @@ bun test scripts/
 Exit code is 0 when at least one source worked. A failed source is listed in
 `meta.sources_failed` and its events from the previous run are kept.
 
-The GitHub Action in `.github/workflows/update.yml` runs the tests and the fetch every night
-at 03:17 UTC and commits `data/` when it changed. It can also be started by hand from the
+The GitHub Action in `.github/workflows/update.yml` runs the tests and the fetch just after
+midnight Swedish time (22:10 and 23:10 UTC, to cover both summer and winter time) and commits
+`data/` when it changed. It can also be started by hand from the
 Actions tab.
 
 ## Sources
