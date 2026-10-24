@@ -70,5 +70,9 @@
  "Österängs bygdegård, Götene kommun": null,
  "Sessionssalen, Centrumhuset Götene, Götene kommun": null,
  "Centrumhuset Götene, Götene kommun": null,
- "Start vid Götene Ryttarklubb Bölaholm, Götene kommun": null
+ "Start vid Götene Ryttarklubb Bölaholm, Götene kommun": null,
+ "Lundsbrunn, Götene kommun": {
+  "lat": 58.4715912,
+  "lng": 13.4452633
+ }
 }
