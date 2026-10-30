@@ -25,7 +25,7 @@ to the event's own page. No images and no descriptions.
       "end": "2026-10-10T23:59:00",
       "next": "2026-10-10T19:00:00+02:00",
       "ongoing": false,
-      "time_text": null,
+      "time_text": "19:00-22:00",
       "categories": ["Musik"],
       "kid_friendly": false,
       "race": false
@@ -36,6 +36,8 @@ to the event's own page. No images and no descriptions.
 
 - `next` is the next date on or after today; events are sorted by it.
 - `ongoing` is true for things already running (exhibitions); `next` is then today.
+- `time_text` is the listed time on the `next` date, or null when none is listed.
+- `lat`/`lng` are null when the source has no position.
 - `unlisted` appears on events the source removed in the last day or two (gotene.se removes a page
   on the day of the event), so the link may be dead.
 
@@ -59,7 +61,12 @@ Actions tab.
 
 ## Sources
 
-- [vastsverige.com](https://www.vastsverige.com/), the calendar feed for each Skaraborg kommun
+- [Turistrådet Västsverige](https://www.vastsverige.com/), the calendar feed for each Skaraborg
+  kommun via their public API
+  ([dataset](https://www.dataportal.se/datasets/197_2851),
+  [Swagger](https://www.vastsverige.com/swagger/ui/index)). Licensed
+  [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/); the vastsverige part of
+  `data/events.json` is shared under the same licence.
 - [gotene.se](https://www.gotene.se/), Götene kommun's evenemangskalender
 - Places from gotene.se are geocoded with [Nominatim](https://nominatim.openstreetmap.org/),
   cached in `data/geocode-cache.json`. Map data © OpenStreetMap contributors.

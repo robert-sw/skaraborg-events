@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { carryForward, keepFailed, nextOccurrence, parseGoteneTitle, type Event } from "./fetch"
+import { carryForward, keepFailed, mapVastsverige, nextOccurrence, parseGoteneTitle, timeText, type Event } from "./fetch"
 
 test("single date title", () => {
   expect(parseGoteneTitle("Barnklädbytardag - 4 oktober", "2026-10-02"))
@@ -80,4 +80,47 @@ test("a failed feed keeps its kommun's upcoming events", () => {
 
 test("nothing is kept when no source failed", () => {
   expect(keepFailed([vs("a", "Skara", "2026-10-20T10:00:00")], [], new Map(), "2026-10-02")).toEqual([])
+})
+
+const hit = (over: Record<string, unknown> = {}) => ({
+  Id: 642106, Heading: "Bibliotekets filmklubb", Tagline: "Filmvisning", City: "Lidköping",
+  Url: "/lackokinnekulle/evenemang/bibliotekets-filmklubb/",
+  Start: "2026-10-08T00:00:00+02:00", End: "2026-12-03T23:00:00+01:00",
+  Position: { lat: 58.5047, lng: 13.1537 },
+  Categories: { Event: [187, 73, 0], Location: [39, 22, 2] },
+  Dates: [
+    { Date: "2026-10-08T00:00:00+02:00", Times: [{ Start: "18:30" }] },
+    { Date: "2026-11-05T00:00:00+01:00", Times: [{ Start: "18:30", End: "20:30" }] },
+  ],
+  ...over,
+})
+
+test("api hit maps to an event", () => {
+  const e = mapVastsverige(hit(), new Set(), "2026-10-30")!
+  expect(e.id).toBe("vs-642106")
+  expect(e.url).toBe("https://www.vastsverige.com/lackokinnekulle/evenemang/bibliotekets-filmklubb/")
+  expect(e.kommun).toBe("Lidköping")
+  expect(e.categories).toEqual(["Film"])
+  expect([e.lat, e.lng]).toEqual([58.5047, 13.1537])
+  expect(e.next.slice(0, 10)).toBe("2026-11-05")
+  expect(e.time_text).toBe("18:30-20:30")
+  expect(e.kid_friendly).toBe(false)
+})
+
+test("position 0,0 is no position", () => {
+  const e = mapVastsverige(hit({ Position: { lat: 0, lng: 0 } }), new Set(), "2026-10-30")!
+  expect([e.lat, e.lng]).toEqual([null, null])
+})
+
+test("kid flag comes from the filtered id set", () => {
+  expect(mapVastsverige(hit(), new Set([642106]), "2026-10-30")!.kid_friendly).toBe(true)
+})
+
+test("hit outside skaraborg is skipped", () => {
+  expect(mapVastsverige(hit({ Categories: { Location: [999] } }), new Set(), "2026-10-30")).toBeNull()
+})
+
+test("no time when the date has none or the event is ongoing", () => {
+  expect(timeText([{ Date: "2026-11-05T00:00:00+01:00", Times: [] }], "2026-11-05T00:00:00+01:00", false)).toBeNull()
+  expect(timeText([{ Date: "2026-10-30T00:00:00+01:00", Times: [{ Start: "10:00" }] }], "2026-10-30T00:00:00", true)).toBeNull()
 })

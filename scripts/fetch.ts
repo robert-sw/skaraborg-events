@@ -3,9 +3,10 @@
  * Fetch upcoming events in Skaraborg's 15 kommuner and write data/events.json.
  *
  * Sources:
- *   - vastsverige.com, one calendar feed per kommun.
- *     /sv/businesslist/positions/?settings=<id>   coordinates for every event in the feed
- *     /sv/businesslist/list/?settings=<id>&page=50 all records (paging is cumulative)
+ *   - vastsverige.com public API (CC BY-SA 4.0), one calendar feed per kommun.
+ *     /api/get/<settings>?searchTypes=Event        all events in the feed
+ *     same with filter=[{"ID":247,"Cat":[248]}]    the ones marked Barnvänligt (not in the hits)
+ *     Spec: https://www.vastsverige.com/swagger/v1/swagger.json
  *   - gotene.se evenemangskalender: library and culture items that are not on vastsverige.
  *     The date is in the title, time and place are on the detail page.
  *
@@ -57,7 +58,7 @@ const EVENT_CATEGORY: Record<number, string> = {
   194: "Mat och dryck", 197: "På scen", 198: "Sport och hälsa", 199: "Teknik och motor",
   207: "Utställningar och mässor",
 }
-const KID_FILTER_ID = 248 // "Barnvänligt"
+const KID_FILTER = [{ ID: 247, Cat: [248] }] // "Fler filter" > "Barnvänligt"
 const KID_WORDS = /\b(barn\w*|knatte\w*|familj\w*|sagostund|sagoläsning|nalle\w*|bamse|kids|lov\w*aktivitet\w*|pyssel\w*|skattjakt|troll)\b/i
 const RACE_WORDS = /(lopp(et)?\b|marat(h)?on|stafett|terräng|motionslopp|cykellopp|galopp)/i
 
@@ -155,7 +156,8 @@ function dayOf(d: Date): string {
 
 const VS = "https://www.vastsverige.com"
 
-interface VsDate { Date: string; EndDate: string | null; Times: unknown }
+interface VsTime { Start?: string; End?: string }
+interface VsDate { Date: string; EndDate?: string | null; Times?: VsTime[] | null }
 
 /** Next relevant day for a vastsverige record, or null when it is over. */
 export function nextOccurrence(start: string, end: string | null, dates: VsDate[] | null, today: string):
@@ -180,46 +182,64 @@ export function nextOccurrence(start: string, end: string | null, dates: VsDate[
   return best ? { ...best, last } : null
 }
 
+/** "18:30" or "12:00-20:00" for the listed date on the event's next day, null when not listed. */
+export function timeText(dates: VsDate[] | null | undefined, next: string, ongoing: boolean): string | null {
+  if (ongoing) return null
+  const day = dayOf(new Date(next))
+  const d = (dates ?? []).find(d => d?.Date && dayOf(new Date(d.Date)) === day)
+  const t = d?.Times?.find(t => t?.Start)
+  if (!t?.Start) return null
+  return t.End ? `${t.Start}-${t.End}` : t.Start
+}
+
+/** One API hit to an Event, or null when it is over, outside Skaraborg or has no title. */
+export function mapVastsverige(h: any, kidIds: Set<number>, today: string): Event | null {
+  const occ = nextOccurrence(h.Start, h.End, h.Dates, today)
+  if (!occ) return null
+  const locs: number[] = h.Categories?.Location ?? []
+  const kommun = locs.map(l => KOMMUN_BY_LOCATION[l]).find(Boolean)
+  if (!kommun) return null
+  const title = String(h.Heading ?? "").trim()
+  if (!title) return null
+  // 0,0 means no position was entered
+  const p = h.Position
+  const hasPos = p && Number.isFinite(p.lat) && Number.isFinite(p.lng) && !(p.lat === 0 && p.lng === 0)
+  const categories = (h.Categories?.Event ?? []).map((id: number) => EVENT_CATEGORY[id]).filter(Boolean)
+  const text = `${h.Heading} ${h.Tagline ?? ""}`
+  return {
+    id: `vs-${h.Id}`,
+    source: "vastsverige",
+    title,
+    url: VS + h.Url,
+    kommun,
+    place: h.City ?? null,
+    lat: hasPos ? p.lat : null,
+    lng: hasPos ? p.lng : null,
+    start: h.Start,
+    end: occ.last ? `${occ.last}T23:59:00` : h.End ?? null,
+    next: occ.next,
+    ongoing: occ.ongoing,
+    time_text: timeText(h.Dates, occ.next, occ.ongoing),
+    categories,
+    kid_friendly: kidIds.has(h.Id) || KID_WORDS.test(text),
+    race: RACE_WORDS.test(h.Heading ?? "") && !/loppis/i.test(h.Heading ?? ""),
+  }
+}
+
 async function fetchVastsverige(settings: number, today: string) {
-  const q = `includeCategories=true&pageActivites=1&settings=${settings}`
-  const list = await get(`${VS}/sv/businesslist/list/?${q}&page=50`, "json")
+  const base = `${VS}/api/get/${settings}?searchTypes=Event&lang=sv&take=1000`
+  const all = await get(`${base}&includeCategories=true`, "json")
+  const hits: any[] = all?.Hits ?? []
+  if (!Array.isArray(hits) || hits.length === 0) throw new Error(`no hits (TotalCount=${all?.TotalCount})`)
+  if (all.TotalCount > hits.length) throw new Error(`got ${hits.length} of ${all.TotalCount} hits`)
   await sleep(400)
-  const pos = await get(`${VS}/sv/businesslist/positions/?${q}&page=1`, "json")
-  const coords = new Map<number, { lat: number; lng: number }>()
-  for (const p of pos?.positions ?? []) if (p?.Position) coords.set(p.Id, p.Position)
-  const hits: any[] = list?.extendedHits ?? list?.hits ?? []
-  if (!Array.isArray(hits) || hits.length === 0) throw new Error(`no hits (totalHits=${list?.totalHits})`)
+  const kid = await get(`${base}&idOnly=true&filter=${encodeURIComponent(JSON.stringify(KID_FILTER))}`, "json")
+  const kidIds = new Set<number>(kid?.IDs ?? (kid?.Hits ?? []).map((h: any) => h.Id))
 
   const out: Event[] = []
   for (const h of hits) {
-    const occ = nextOccurrence(h.Start, h.End, h.Dates, today)
-    if (!occ) continue
-    const locs: number[] = h.Categories?.Location ?? []
-    const kommun = locs.map(l => KOMMUN_BY_LOCATION[l]).find(Boolean)
-    if (!kommun) continue // outside Skaraborg
-    const title = String(h.Heading ?? "").trim()
-    if (!title) continue
-    const c = coords.get(h.Id) ?? null
-    const categories = (h.Categories?.Event ?? []).map((id: number) => EVENT_CATEGORY[id]).filter(Boolean)
-    const text = `${h.Heading} ${h.Tagline ?? ""}`
-    out.push({
-      id: `vs-${h.Id}`,
-      source: "vastsverige",
-      title,
-      url: VS + h.Url,
-      kommun,
-      place: h.City ?? null,
-      lat: c?.lat ?? null,
-      lng: c?.lng ?? null,
-      start: h.Start,
-      end: occ.last ? `${occ.last}T23:59:00` : h.End ?? null,
-      next: occ.next,
-      ongoing: occ.ongoing,
-      time_text: null,
-      categories,
-      kid_friendly: (h.Categories?.ToggleFilters ?? []).includes(KID_FILTER_ID) || KID_WORDS.test(text),
-      race: RACE_WORDS.test(h.Heading ?? "") && !/loppis/i.test(h.Heading ?? ""),
-    })
+    const e = mapVastsverige(h, kidIds, today)
+    if (e) out.push(e)
   }
   return out
 }
@@ -425,7 +445,7 @@ async function main() {
       sources_failed: failed,
       total: events.length,
       by_kommun: counts,
-      attribution: ["vastsverige.com", "gotene.se", "© OpenStreetMap contributors"],
+      attribution: ["Turistrådet Västsverige (vastsverige.com), CC BY-SA 4.0", "gotene.se", "© OpenStreetMap contributors"],
     },
     events,
   }
