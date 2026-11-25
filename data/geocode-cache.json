@@ -83,5 +83,10 @@
  "Alsborgsgatan 11-13 i Götene, kvarteret Melonen 6, Götene kommun": null,
  "kvarteret Melonen 6, Götene kommun": null,
  "Götene bibliotek, Götene kommun": null,
- "Holmestads bygdegård, Götene kommun": null
+ "Holmestads bygdegård, Götene kommun": null,
+ "Götene kommunbibliotek, Centrumhuset, Torggatan 4 i Götene., Götene kommun": null,
+ "Torggatan 4 i Götene., Götene kommun": {
+  "lat": 58.5278251,
+  "lng": 13.4945429
+ }
 }
